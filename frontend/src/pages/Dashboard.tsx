@@ -23,8 +23,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-
-const API_URL = "http://localhost:3000/api";
+import { API_URL } from "@/lib/api";
 
 interface ExecutionDataItem {
   name: string;
@@ -73,13 +72,31 @@ const Dashboard = () => {
     const fetchDashboardData = async () => {
       try {
         const token = localStorage.getItem("token");
-        const response = await fetch(`${API_URL}/dashboard/stats`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const userStr = localStorage.getItem("currentUser");
+        const user = userStr ? JSON.parse(userStr) : null;
 
+        const headers = { Authorization: `Bearer ${token}` };
+
+        // Fetch regular stats
+        const response = await fetch(`${API_URL}/dashboard/stats`, { headers });
         if (response.ok) {
           const data = await response.json();
-          setMetrics(data.metrics);
+          let newMetrics = data.metrics;
+
+          // If admin, fetch admin stats
+          if (user && user.role === 'admin') {
+            try {
+              const adminRes = await fetch(`${API_URL}/dashboard/admin-stats`, { headers });
+              if (adminRes.ok) {
+                const adminData = await adminRes.json();
+                newMetrics = { ...newMetrics, ...adminData.stats };
+              }
+            } catch (e) {
+              console.error("Failed to fetch admin stats", e);
+            }
+          }
+
+          setMetrics(newMetrics);
           setExecutionData(data.executionData);
           setWeeklyData(data.weeklyData);
           setRecentExecutions(data.recentExecutions);
@@ -107,6 +124,38 @@ const Dashboard = () => {
   return (
     <AppLayout title="Dashboard">
       <div className="space-y-6">
+        {/* Admin Overview - Only for Admins */}
+        {/* This is a placeholder for checking role - in real app useAuth().user.role */}
+        {/* We'll fetch the user role from localStorage or context */}
+        {metrics && 'systemStatus' in metrics && (
+          <div className="space-y-4 mb-8">
+            <h2 className="text-lg font-semibold border-b pb-2">Admin Overview</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <MetricCard
+                title="Total Users"
+                value={(metrics as any).totalUsers || 0}
+                change={`${(metrics as any).activeUsers || 0} active`}
+                changeType="neutral"
+                icon={TestTube2}
+              />
+              <MetricCard
+                title="Total Projects"
+                value={(metrics as any).totalProjects || 0}
+                change="System wide"
+                changeType="neutral"
+                icon={Play}
+              />
+              <MetricCard
+                title="System Status"
+                value={(metrics as any).systemStatus || 'Unknown'}
+                change={`Uptime: ${Math.round((metrics as any).uptime / 3600)}h`}
+                changeType="positive"
+                icon={CheckCircle2}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
@@ -119,8 +168,8 @@ const Dashboard = () => {
           <MetricCard
             title="Executed"
             value={metrics.totalExecutions}
-            change={metrics.totalTestCases > 0 
-              ? `${Math.round((metrics.totalExecutions / metrics.totalTestCases) * 100)}% completion` 
+            change={metrics.totalTestCases > 0
+              ? `${Math.round((metrics.totalExecutions / metrics.totalTestCases) * 100)}% completion`
               : "0% completion"}
             changeType="positive"
             icon={Play}
@@ -228,5 +277,4 @@ const Dashboard = () => {
     </AppLayout>
   );
 };
-
 export default Dashboard;

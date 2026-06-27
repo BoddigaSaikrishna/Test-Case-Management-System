@@ -7,8 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { ClipboardList, Eye, EyeOff } from "lucide-react";
-
-const API_URL = "http://localhost:3000/api";
+import { API_URL } from "@/lib/api";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -16,7 +15,6 @@ const Login = () => {
   const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { login, isAuthenticated } = useAuth();
@@ -33,10 +31,8 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const endpoint = isSignUp ? "/auth/signup" : "/auth/signin";
-      const body = isSignUp 
-        ? { email, password, name: name.trim() || email.split("@")[0] }
-        : { email, password };
+      const endpoint = "/auth/signin";
+      const body = { email, password };
 
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: "POST",
@@ -52,24 +48,14 @@ const Login = () => {
         throw new Error(data.error || "Authentication failed");
       }
 
-      if (isSignUp) {
-        toast({
-          title: "Account created",
-          description: "Your account has been created successfully. Please sign in.",
-        });
-        setIsSignUp(false);
-        setName("");
-        setPassword("");
-      } else {
-        // Use auth context to login
-        login(data.token, data.user);
-        
-        toast({
-          title: "Welcome back!",
-          description: `Hello, ${data.user.name}! You have successfully logged in.`,
-        });
-        navigate("/dashboard");
-      }
+      // Use auth context to login
+      login(data.token, data.user);
+      
+      toast({
+        title: "Welcome back!",
+        description: `Hello, ${data.user.name}! You have successfully logged in.`,
+      });
+      navigate("/dashboard");
     } catch (error: any) {
       toast({
         title: "Error",
@@ -92,30 +78,14 @@ const Login = () => {
             </div>
           </div>
           <CardTitle className="text-2xl">
-            {isSignUp ? "Create an account" : "Welcome back"}
+            Welcome back
           </CardTitle>
           <CardDescription>
-            {isSignUp
-              ? "Enter your email to create your account"
-              : "Enter your credentials to access your account"}
+            Enter your credentials to access your account
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
-            {isSignUp && (
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="Enter your full name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                  required={isSignUp}
-                />
-              </div>
-            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -138,7 +108,7 @@ const Login = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  autoComplete={isSignUp ? "new-password" : "current-password"}
+                  autoComplete="current-password"
                 />
                 <Button
                   type="button"
@@ -158,22 +128,8 @@ const Login = () => {
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading
-                ? "Please wait..."
-                : isSignUp
-                ? "Create account"
-                : "Sign in"}
+              {isLoading ? "Please wait..." : "Sign in"}
             </Button>
-            <p className="text-sm text-center text-muted-foreground">
-              {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
-              <button
-                type="button"
-                className="text-primary hover:underline font-medium"
-                onClick={() => setIsSignUp(!isSignUp)}
-              >
-                {isSignUp ? "Sign in" : "Sign up"}
-              </button>
-            </p>
           </CardFooter>
         </form>
       </Card>

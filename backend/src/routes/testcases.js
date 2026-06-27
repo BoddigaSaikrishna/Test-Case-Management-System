@@ -110,17 +110,18 @@ router.get('/:id', async (req, res) => {
 // Create a new test case with steps
 router.post('/', async (req, res) => {
   try {
-    const { 
-      project_id, 
-      title, 
-      description, 
+    const {
+      project_id,
+      title,
+      description,
       preconditions,
-      module, 
-      priority, 
-      type, 
+      module,
+      priority,
+      type,
       expected_result,
       assigned_to,
-      steps 
+      feature_url,
+      steps
     } = req.body;
 
     if (!project_id || !title) {
@@ -147,6 +148,7 @@ router.post('/', async (req, res) => {
           expected_result: expected_result || null,
           created_by: req.user.id,
           assigned_to: assigned_to || null,
+          feature_url: feature_url || null,
         }
       ])
       .select()
@@ -154,7 +156,8 @@ router.post('/', async (req, res) => {
 
     if (error) {
       console.error('Error creating test case:', error);
-      return res.status(500).json({ error: 'Failed to create test case' });
+      require('fs').writeFileSync('last_error.log', JSON.stringify(error, null, 2));
+      return res.status(500).json({ error: 'Failed to create test case', details: error });
     }
 
     // Create steps if provided
@@ -164,6 +167,7 @@ router.post('/', async (req, res) => {
         step_number: index + 1,
         action: step.action,
         expected_result: step.expected_result || null,
+        test_code: step.test_code || null,
       }));
 
       const { error: stepsError } = await supabase
@@ -175,9 +179,9 @@ router.post('/', async (req, res) => {
       }
     }
 
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'Test case created successfully',
-      testCase 
+      testCase
     });
   } catch (error) {
     console.error('Error:', error);
@@ -189,17 +193,18 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { 
-      title, 
-      description, 
+    const {
+      title,
+      description,
       preconditions,
-      module, 
-      priority, 
-      type, 
+      module,
+      priority,
+      type,
       status,
       expected_result,
       assigned_to,
-      steps 
+      feature_url,
+      steps
     } = req.body;
 
     const { data: testCase, error } = await supabase
@@ -214,6 +219,7 @@ router.put('/:id', async (req, res) => {
         status,
         expected_result,
         assigned_to,
+        feature_url,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
@@ -239,6 +245,7 @@ router.put('/:id', async (req, res) => {
           step_number: index + 1,
           action: step.action,
           expected_result: step.expected_result || null,
+          test_code: step.test_code || null,
         }));
 
         await supabase
@@ -247,9 +254,9 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    res.json({ 
+    res.json({
       message: 'Test case updated successfully',
-      testCase 
+      testCase
     });
   } catch (error) {
     console.error('Error:', error);
@@ -315,13 +322,121 @@ router.post('/:id/steps', async (req, res) => {
       return res.status(500).json({ error: 'Failed to add step' });
     }
 
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'Step added successfully',
-      step 
+      step
     });
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Export all test cases with full data
+router.get('/export/all', async (req, res) => {
+  try {
+    const { project_id } = req.query;
+
+    let query = supabase
+      .from('test_cases')
+      .select(`
+        *,
+        test_case_steps(*)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (project_id) {
+      query = query.eq('project_id', project_id);
+    }
+
+    const { data: testCases, error } = await query;
+
+    if (error) {
+      console.error('Error fetching test cases for export:', error);
+      return res.status(500).json({ error: 'Failed to export test cases' });
+    }
+
+    res.json({ testCases });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Import bulk test cases
+router.post('/import', async (req, res) => {
+  try {
+    const { testCases } = req.body;
+
+    if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
+      return res.status(400).json({ error: 'Valid testCases array is required' });
+    }
+
+    const imported = [];
+    
+    for (const tc of testCases) {
+      // Validate minimal fields
+      if (!tc.project_id || !tc.title) continue;
+
+      // Generate a new test case ID
+      const test_case_id = await generateTestCaseId();
+
+      const { data: testCase, error } = await supabase
+        .from('test_cases')
+        .insert([{
+          test_case_id,
+          project_id: tc.project_id,
+          title: tc.title,
+          description: tc.description || null,
+          preconditions: tc.preconditions || null,
+          module: tc.module || null,
+          priority: tc.priority || 'medium',
+          type: tc.type || 'functional',
+          status: tc.status || 'draft',
+          expected_result: tc.expected_result || null,
+          created_by: req.user.id,
+          assigned_to: tc.assigned_to || null,
+          feature_url: tc.feature_url || null,
+        }])
+        .select()
+        .single();
+
+      if (error || !testCase) {
+        console.error('Error importing test case:', error);
+        continue;
+      }
+
+      imported.push(testCase);
+
+      // Import steps if they exist
+      if (tc.test_case_steps && Array.isArray(tc.test_case_steps) && tc.test_case_steps.length > 0) {
+        const stepsData = tc.test_case_steps.map((step, index) => ({
+          test_case_id: testCase.id,
+          step_number: step.step_number || index + 1,
+          action: step.action,
+          expected_result: step.expected_result || null,
+          test_code: step.test_code || null,
+        })).filter(s => s.action); // Must have an action
+
+        if (stepsData.length > 0) {
+          const { error: stepsError } = await supabase
+            .from('test_case_steps')
+            .insert(stepsData);
+
+          if (stepsError) {
+            console.error('Error creating imported steps:', stepsError);
+          }
+        }
+      }
+    }
+
+    res.status(201).json({
+      message: `${imported.length} test cases imported successfully`,
+      count: imported.length
+    });
+  } catch (error) {
+    console.error('Error importing:', error);
+    res.status(500).json({ error: 'Internal server error during import' });
   }
 });
 

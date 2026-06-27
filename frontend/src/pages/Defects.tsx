@@ -12,7 +12,7 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow,
+  TableRow, 
 } from "@/components/ui/table";
 import {
   Select,
@@ -41,8 +41,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-
-const API_URL = "http://localhost:3000/api";
+import { API_URL } from "@/lib/api";
 
 interface Defect {
   id: string;

@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -39,10 +41,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Loader2, Play, CheckCircle, XCircle, AlertCircle, MinusCircle, Trash2 } from "lucide-react";
+import { Plus, Search, Loader2, Play, CheckCircle, XCircle, AlertCircle, MinusCircle, Trash2, Eye, Clock, Timer } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-const API_URL = "http://localhost:3000/api";
+import { API_URL } from "@/lib/api";
 
 interface TestCaseStep {
   id: string;
@@ -90,6 +91,7 @@ interface Project {
 }
 
 const Executions = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -102,6 +104,12 @@ const Executions = () => {
   const [loadingSteps, setLoadingSteps] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [executionTimer, setExecutionTimer] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [viewExecution, setViewExecution] = useState<Execution | null>(null);
+  const [viewSteps, setViewSteps] = useState<ExecutionStep[]>([]);
+  const [loadingViewSteps, setLoadingViewSteps] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
   // Form state
@@ -236,6 +244,94 @@ const Executions = () => {
     }
   }, [formData.test_case_id]);
 
+  // Handle ?run= parameter from TestCases page
+  useEffect(() => {
+    const runId = searchParams.get("run");
+    if (runId && testCases.length > 0) {
+      const testCase = testCases.find(tc => tc.id === runId);
+      if (testCase) {
+        setFormData(prev => ({
+          ...prev,
+          project_id: testCase.project_id,
+          test_case_id: runId,
+        }));
+        setIsDialogOpen(true);
+        startTimer();
+        // Clear the URL parameter
+        setSearchParams({});
+      }
+    }
+  }, [searchParams, testCases]);
+
+  // Timer functionality
+  useEffect(() => {
+    if (isTimerRunning) {
+      timerRef.current = setInterval(() => {
+        setExecutionTimer(prev => prev + 1);
+      }, 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isTimerRunning]);
+
+  const startTimer = () => {
+    setExecutionTimer(0);
+    setIsTimerRunning(true);
+  };
+
+  const stopTimer = () => {
+    setIsTimerRunning(false);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getExecutionProgress = () => {
+    if (executionSteps.length === 0) return 0;
+    const completed = executionSteps.filter(s => s.status !== "pending").length;
+    return Math.round((completed / executionSteps.length) * 100);
+  };
+
+  const fetchExecutionSteps = async (executionId: string) => {
+    setLoadingViewSteps(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_URL}/executions/${executionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // Backend returns execution_steps with test_case_step nested data
+        const executionSteps = data.execution?.execution_steps || [];
+        // Map to the format expected by the view dialog
+        const mappedSteps = executionSteps.map((es: any) => ({
+          id: es.id,
+          step_number: es.test_case_step?.step_number || es.step_number,
+          action: es.test_case_step?.action || '',
+          expected_result: es.test_case_step?.expected_result || '',
+          actual_result: es.actual_result,
+          status: es.status,
+        }));
+        setViewSteps(mappedSteps);
+      }
+    } catch (error) {
+      console.error("Error fetching execution steps:", error);
+    } finally {
+      setLoadingViewSteps(false);
+    }
+  };
+
+  const handleViewExecution = (execution: Execution) => {
+    setViewExecution(execution);
+    fetchExecutionSteps(execution.id);
+  };
+
   const updateStepStatus = (index: number, status: string) => {
     const newSteps = [...executionSteps];
     newSteps[index].status = status;
@@ -261,6 +357,7 @@ const Executions = () => {
   const handleCreateExecution = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    stopTimer();
 
     try {
       const token = localStorage.getItem("token");
@@ -279,6 +376,7 @@ const Executions = () => {
           environment: formData.environment || null,
           browser: formData.browser || null,
           comments: formData.comments || null,
+          execution_time: executionTimer,
           steps: executionSteps.filter(s => s.test_case_step_id),
         }),
       });
@@ -305,6 +403,7 @@ const Executions = () => {
       });
       setExecutionSteps([]);
       setTestCaseSteps([]);
+      setExecutionTimer(0);
       setIsDialogOpen(false);
 
       fetchExecutions();
@@ -388,7 +487,11 @@ const Executions = () => {
               </SelectContent>
             </Select>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (open) startTimer();
+            else { stopTimer(); setExecutionTimer(0); }
+          }}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-9 bg-accent text-accent-foreground hover:bg-accent/90">
                 <Plus className="h-3.5 w-3.5 mr-1.5" />
@@ -398,10 +501,28 @@ const Executions = () => {
             <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
               <form onSubmit={handleCreateExecution}>
                 <DialogHeader>
-                  <DialogTitle>Execute Test Case</DialogTitle>
-                  <DialogDescription>
-                    Run a test case and record the results for each step
-                  </DialogDescription>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <DialogTitle>Execute Test Case</DialogTitle>
+                      <DialogDescription>
+                        Run a test case and record the results for each step
+                      </DialogDescription>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="flex items-center gap-1.5 bg-muted px-3 py-1.5 rounded-lg">
+                        <Timer className="h-4 w-4 text-accent" />
+                        <span className="font-mono font-medium">{formatTime(executionTimer)}</span>
+                      </div>
+                      {executionSteps.length > 0 && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-muted-foreground">{getExecutionProgress()}%</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {executionSteps.length > 0 && (
+                    <Progress value={getExecutionProgress()} className="h-1.5 mt-2" />
+                  )}
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -633,7 +754,7 @@ const Executions = () => {
                   <TableHead className="text-xs">Executed By</TableHead>
                   <TableHead className="text-xs">Date</TableHead>
                   <TableHead className="text-xs">Comments</TableHead>
-                  <TableHead className="text-xs w-16">Actions</TableHead>
+                  <TableHead className="text-xs w-24">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -651,17 +772,32 @@ const Executions = () => {
                       {exec.comments || "-"}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteId(exec.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-accent hover:text-accent hover:bg-accent/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewExecution(exec);
+                          }}
+                          title="View Details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteId(exec.id);
+                          }}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -692,6 +828,126 @@ const Executions = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* View Execution Details Dialog */}
+      <Dialog open={!!viewExecution} onOpenChange={(open) => !open && setViewExecution(null)}>
+        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span>Execution Details</span>
+              {viewExecution && <StatusBadge status={viewExecution.status} variant="execution" />}
+            </DialogTitle>
+            <DialogDescription>
+              {viewExecution?.execution_id} - {viewExecution?.testCaseTitle}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {viewExecution && (
+            <div className="space-y-4">
+              {/* Execution Info */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
+                <div>
+                  <p className="text-xs text-muted-foreground">Test Case</p>
+                  <p className="text-sm font-medium">{viewExecution.testCaseId}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Project</p>
+                  <p className="text-sm font-medium">{viewExecution.projectName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Executed By</p>
+                  <p className="text-sm font-medium">{viewExecution.executorName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Date</p>
+                  <p className="text-sm font-medium">{new Date(viewExecution.executed_at).toLocaleString()}</p>
+                </div>
+                {viewExecution.environment && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Environment</p>
+                    <p className="text-sm font-medium">{viewExecution.environment}</p>
+                  </div>
+                )}
+                {viewExecution.browser && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Browser</p>
+                    <p className="text-sm font-medium capitalize">{viewExecution.browser}</p>
+                  </div>
+                )}
+                {viewExecution.execution_time && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Duration</p>
+                    <p className="text-sm font-medium">{formatTime(viewExecution.execution_time)}</p>
+                  </div>
+                )}
+              </div>
+
+              {viewExecution.comments && (
+                <div className="p-3 bg-muted/30 rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-1">Comments</p>
+                  <p className="text-sm">{viewExecution.comments}</p>
+                </div>
+              )}
+
+              {/* Step Results */}
+              <div>
+                <h4 className="text-sm font-semibold mb-3">Step Results</h4>
+                {loadingViewSteps ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : viewSteps.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No step results recorded</p>
+                ) : (
+                  <div className="space-y-2">
+                    {viewSteps.map((step, index) => (
+                      <div key={index} className="border rounded-lg p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-medium">Step {step.step_number}</span>
+                              {getStatusIcon(step.status)}
+                              <span className="text-xs capitalize text-muted-foreground">{step.status}</span>
+                            </div>
+                            <p className="text-sm">{step.action}</p>
+                            {step.expected_result && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                <span className="font-medium">Expected:</span> {step.expected_result}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        {(step.actual_result || step.notes) && (
+                          <div className="mt-2 pt-2 border-t grid grid-cols-2 gap-2">
+                            {step.actual_result && (
+                              <div>
+                                <p className="text-xs text-muted-foreground">Actual Result</p>
+                                <p className="text-sm">{step.actual_result}</p>
+                              </div>
+                            )}
+                            {step.notes && (
+                              <div>
+                                <p className="text-xs text-muted-foreground">Notes</p>
+                                <p className="text-sm">{step.notes}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewExecution(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };

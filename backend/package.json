@@ -5,16 +5,23 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "test": "jest --runInBand --detectOpenHandles",
+    "test:watch": "jest --runInBand --watch",
+    "migrate": "node src/config/migrate.js",
+    "migrate:list": "node src/config/migrate.js --list"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "puppeteer": "^25.1.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.7"
+    "jest": "^30.4.2",
+    "nodemon": "^3.1.7",
+    "supertest": "^7.2.2"
   }
 }
