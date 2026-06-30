@@ -15,6 +15,7 @@ import Defects from "./pages/Defects";
 import Reports from "./pages/Reports";
 import UsersPage from "./pages/UsersPage";
 import SettingsPage from "./pages/SettingsPage";
+import AuditLogs from "./pages/AuditLogs";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+            <Route path="/audit-logs" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

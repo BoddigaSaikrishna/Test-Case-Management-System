@@ -1,6 +1,7 @@
 const express = require('express');
 const { supabase } = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
+const { logAction } = require('../services/auditLogger');
 
 const router = express.Router();
 
@@ -163,6 +164,14 @@ router.post('/', async (req, res) => {
       return res.status(500).json({ error: 'Failed to create defect' });
     }
 
+    await logAction({
+      userId: req.user.id,
+      action: 'CREATE',
+      entityType: 'DEFECT',
+      entityId: defect.id,
+      details: { defect_id: defect.defect_id, title: defect.title }
+    });
+
     res.status(201).json({ 
       message: 'Defect reported successfully',
       defect 
@@ -223,6 +232,14 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Defect not found' });
     }
 
+    await logAction({
+      userId: req.user.id,
+      action: 'UPDATE',
+      entityType: 'DEFECT',
+      entityId: defect.id,
+      details: { title: defect.title, status: defect.status }
+    });
+
     res.json({ 
       message: 'Defect updated successfully',
       defect 
@@ -246,6 +263,13 @@ router.delete('/:id', async (req, res) => {
     if (error) {
       return res.status(500).json({ error: 'Failed to delete defect' });
     }
+
+    await logAction({
+      userId: req.user.id,
+      action: 'DELETE',
+      entityType: 'DEFECT',
+      entityId: id
+    });
 
     res.json({ message: 'Defect deleted successfully' });
   } catch (error) {

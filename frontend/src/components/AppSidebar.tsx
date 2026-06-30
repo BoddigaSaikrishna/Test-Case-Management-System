@@ -8,7 +8,8 @@ import {
   Settings,
   Users,
   FlaskConical,
-  Shield,
+  ShieldAlert,
+  History,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -38,7 +39,8 @@ const analyticsItems = [
 ];
 
 const adminItems = [
-  { title: "Admin Dashboard", url: "/admin", icon: Shield },
+  { title: "Admin Dashboard", url: "/admin", icon: ShieldAlert },
+  { title: "Audit Logs", url: "/audit-logs", icon: History },
   { title: "Users", url: "/users", icon: Users },
   { title: "Settings", url: "/settings", icon: Settings },
 ];

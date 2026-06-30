@@ -1,6 +1,7 @@
 const express = require('express');
 const { supabase } = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
+const { logAction } = require('../services/auditLogger');
 
 const router = express.Router();
 
@@ -113,6 +114,14 @@ router.post('/', async (req, res) => {
         }
       ]);
 
+    await logAction({
+      userId: req.user.id,
+      action: 'CREATE',
+      entityType: 'PROJECT',
+      entityId: project.id,
+      details: { name: project.name }
+    });
+
     res.status(201).json({ 
       message: 'Project created successfully',
       project 
@@ -147,6 +156,14 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
+    await logAction({
+      userId: req.user.id,
+      action: 'UPDATE',
+      entityType: 'PROJECT',
+      entityId: project.id,
+      details: { name: project.name }
+    });
+
     res.json({ 
       message: 'Project updated successfully',
       project 
@@ -170,6 +187,13 @@ router.delete('/:id', async (req, res) => {
     if (error) {
       return res.status(500).json({ error: 'Failed to delete project' });
     }
+
+    await logAction({
+      userId: req.user.id,
+      action: 'DELETE',
+      entityType: 'PROJECT',
+      entityId: id
+    });
 
     res.json({ message: 'Project deleted successfully' });
   } catch (error) {

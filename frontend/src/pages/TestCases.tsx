@@ -39,10 +39,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Download, Upload, Loader2, Trash2, Play, Code, Rocket, Link as LinkIcon, Edit } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Plus, Search, Download, Upload, Loader2, Trash2, Play, Code, Rocket, Link as LinkIcon, Edit, FileJson, FileSpreadsheet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { API_URL } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
+import Papa from "papaparse";
 
 interface TestCaseStep {
   action: string;
@@ -330,7 +337,7 @@ const TestCases = () => {
     }
   };
 
-  const handleExport = async () => {
+  const handleJSONExport = async () => {
     setIsExporting(true);
     try {
       const token = localStorage.getItem("token");
@@ -344,7 +351,6 @@ const TestCases = () => {
 
       const data = await response.json();
       
-      // Create a blob and download it
       const blob = new Blob([JSON.stringify(data.testCases, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -357,7 +363,64 @@ const TestCases = () => {
 
       toast({
         title: "Export Successful",
-        description: `Exported ${data.testCases.length} test cases`,
+        description: `Exported ${data.testCases.length} test cases as JSON`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      toast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : "Failed to export test cases",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleCSVExport = async () => {
+    setIsExporting(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_URL}/testcases/export/all`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to export test cases");
+      }
+
+      const data = await response.json();
+      
+      const csvData = data.testCases.map((tc: any) => ({
+        Project_ID: tc.project_id,
+        Test_Case_ID: tc.test_case_id,
+        Title: tc.title,
+        Description: tc.description || "",
+        Preconditions: tc.preconditions || "",
+        Module: tc.module || "",
+        Priority: tc.priority,
+        Type: tc.type,
+        Status: tc.status,
+        Expected_Result: tc.expected_result || "",
+        Assigned_To: tc.assigned_to || "",
+        Feature_URL: tc.feature_url || "",
+        Steps_JSON: tc.test_case_steps ? JSON.stringify(tc.test_case_steps) : "[]"
+      }));
+
+      const csv = Papa.unparse(csvData);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `test-cases-export-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Export Successful",
+        description: `Exported ${data.testCases.length} test cases as CSV`,
       });
     } catch (error) {
       console.error("Export error:", error);
@@ -379,10 +442,28 @@ const TestCases = () => {
     try {
       const text = await file.text();
       let testCases;
-      try {
-        testCases = JSON.parse(text);
-      } catch (e) {
-        throw new Error("Invalid JSON file");
+      if (file.name.endsWith(".csv")) {
+        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+        testCases = parsed.data.map((row: any) => ({
+          project_id: row.project_id || row.Project_ID,
+          title: row.title || row.Title,
+          description: row.description || row.Description,
+          preconditions: row.preconditions || row.Preconditions,
+          module: row.module || row.Module,
+          priority: (row.priority || row.Priority || "medium").toLowerCase(),
+          type: (row.type || row.Type || "functional").toLowerCase(),
+          status: (row.status || row.Status || "draft").toLowerCase(),
+          expected_result: row.expected_result || row.Expected_Result,
+          assigned_to: row.assigned_to || row.Assigned_To,
+          feature_url: row.feature_url || row.Feature_URL,
+          test_case_steps: row.steps_json || row.Steps_JSON ? JSON.parse(row.steps_json || row.Steps_JSON) : []
+        }));
+      } else {
+        try {
+          testCases = JSON.parse(text);
+        } catch (e) {
+          throw new Error("Invalid JSON file");
+        }
       }
 
       if (!Array.isArray(testCases)) {
@@ -530,7 +611,7 @@ const TestCases = () => {
           <div className="flex gap-2">
             <input 
               type="file" 
-              accept=".json" 
+              accept=".json,.csv" 
               className="hidden" 
               ref={fileInputRef} 
               onChange={handleImportFileChange} 
@@ -545,16 +626,27 @@ const TestCases = () => {
               {isImporting ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
               Import
             </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="h-9"
-              onClick={handleExport}
-              disabled={isExporting}
-            >
-              {isExporting ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1.5" />}
-              Export
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-9"
+                  disabled={isExporting}
+                >
+                  {isExporting ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1.5" />}
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={handleJSONExport}>
+                  <FileJson className="mr-2 h-4 w-4" /> Export as JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleCSVExport}>
+                  <FileSpreadsheet className="mr-2 h-4 w-4" /> Export as CSV
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Dialog open={isDialogOpen} onOpenChange={(open) => {
               setIsDialogOpen(open);
               if (!open) {

@@ -1,6 +1,7 @@
 const express = require('express');
 const { supabase } = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
+const { logAction } = require('../services/auditLogger');
 
 const router = express.Router();
 
@@ -179,6 +180,14 @@ router.post('/', async (req, res) => {
       }
     }
 
+    await logAction({
+      userId: req.user.id,
+      action: 'CREATE',
+      entityType: 'TEST_CASE',
+      entityId: testCase.id,
+      details: { test_case_id: testCase.test_case_id, title: testCase.title }
+    });
+
     res.status(201).json({
       message: 'Test case created successfully',
       testCase
@@ -254,6 +263,14 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    await logAction({
+      userId: req.user.id,
+      action: 'UPDATE',
+      entityType: 'TEST_CASE',
+      entityId: id,
+      details: { title: testCase.title }
+    });
+
     res.json({
       message: 'Test case updated successfully',
       testCase
@@ -277,6 +294,13 @@ router.delete('/:id', async (req, res) => {
     if (error) {
       return res.status(500).json({ error: 'Failed to delete test case' });
     }
+
+    await logAction({
+      userId: req.user.id,
+      action: 'DELETE',
+      entityType: 'TEST_CASE',
+      entityId: id
+    });
 
     res.json({ message: 'Test case deleted successfully' });
   } catch (error) {
