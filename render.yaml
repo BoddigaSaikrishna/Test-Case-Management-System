@@ -1,4 +1,4 @@
-﻿# render.yaml — Render.com Deployment Blueprint
+# render.yaml — Render.com Deployment Blueprint
 # This file defines both services for the Test Case Management System.
 #
 # NOTE: Render blueprints do NOT support type: static.
@@ -16,6 +16,7 @@ services:
   - type: web
     name: tcms-backend
     runtime: node
+    plan: free
     rootDir: backend
     buildCommand: npm install
     startCommand: npm start
@@ -44,6 +45,7 @@ services:
   - type: web
     name: tcms-frontend
     runtime: node
+    plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
     startCommand: npx serve dist -l $PORT --single
